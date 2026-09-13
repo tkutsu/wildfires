@@ -155,24 +155,42 @@ summary {
   border-top-color: var(--paper);
 }
 
-/* Leaflet's own chrome, restyled to match the app shell. */
+/* Leaflet's own chrome, restyled to match the app shell. Scoped under
+   .leaflet-container because leaflet.css is: at lower specificity its white
+   backgrounds win, which only shows once the theme is dark. */
 .leaflet-container {
   background: var(--paper);
   font-family: inherit;
 }
 
-.leaflet-bar a,
-.leaflet-control-attribution {
+.leaflet-container .leaflet-bar,
+.leaflet-touch .leaflet-bar {
+  border-color: rgb(var(--ink-rgb) / 0.15);
+}
+
+.leaflet-container .leaflet-bar a,
+.leaflet-container .leaflet-control-attribution {
   color: var(--ink);
   background: rgb(var(--surface-rgb) / 0.92);
 }
 
-.leaflet-bar a {
+.leaflet-container .leaflet-bar a {
   border-bottom-color: rgb(var(--ink-rgb) / 0.15);
 }
 
-.leaflet-bar a:hover {
+.leaflet-container .leaflet-bar a:hover,
+.leaflet-container .leaflet-bar a:focus {
   background: rgb(var(--surface-rgb) / 1);
+}
+
+/* At the zoom limit: dimmed, on the same surface rather than Leaflet's grey. */
+.leaflet-container .leaflet-bar a.leaflet-disabled {
+  color: rgb(var(--ink-rgb) / 0.35);
+  background: rgb(var(--surface-rgb) / 0.92);
+}
+
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--signal);
 }
 
 .fire-range {
