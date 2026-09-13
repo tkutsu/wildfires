@@ -3,14 +3,15 @@ name: Build and deploy
 on:
   push:
     branches: [main]
-  # Daily is enough: the browser tops the detections up from EFFIS on every
-  # visit, so a rebuild only refreshes the burn scars and the season's tail —
-  # and EFFIS maps a perimeter days after its fire starts.
-  #
-  # GitHub disables scheduled workflows after 60 days without repo activity;
-  # re-enable from the Actions tab if the map ever goes stale.
+  # EFFIS publishes Greece in two bursts, a couple of hours after each pair of
+  # satellite passes: 02:00-05:00 UTC for the night passes and 12:00-15:00 UTC
+  # for the day ones, with nothing in between. One build after each catches
+  # about 95% of both; the browser picks up the stragglers. GitHub can start a
+  # scheduled run late under load, which the quiet hours after each burst
+  # absorb.
   schedule:
-    - cron: "17 4 * * *"
+    - cron: "30 5 * * *"
+    - cron: "30 15 * * *"
   workflow_dispatch:
 
 permissions:
@@ -23,6 +24,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # In a public repository GitHub pauses scheduled workflows after 60 days
+  # without a push, and it treats automating activity to prevent that as a
+  # terms-of-service violation (it disabled the keepalive-workflow action for
+  # it). So nothing here fakes a commit. From day 50 this job fails instead,
+  # which GitHub notifies the owner about, leaving ten days to push a real
+  # change. The build and deploy do not depend on it and carry on regardless.
+  inactivity:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Warn before GitHub pauses the schedule
+        run: |
+          days=$(( ($(date +%s) - $(git log -1 --format=%ct)) / 86400 ))
+          echo "Last commit was $days days ago."
+          if [ "$days" -ge 50 ]; then
+            echo "::error title=Schedule pauses soon::No commit for $days days. GitHub stops this schedule at 60 days without a push. Push any real change to keep the map updating."
+            exit 1
+          fi
+
   build:
     runs-on: ubuntu-latest
     steps:

@@ -30,6 +30,7 @@ const pointFeatureSchema = z.object({
     acq_at: z.string(),
     // Numbers arrive as strings on this layer.
     frp: z.union([z.string(), z.number()]).nullable().optional(),
+    upload_at: z.string().nullable().optional(),
   }),
   geometry: z.object({
     type: z.literal("Point"),
@@ -70,11 +71,24 @@ async function fetchEffisJson(base: string, params: URLSearchParams) {
   throw lastError;
 }
 
-function toHotspots(payload: unknown): Hotspot[] {
+export interface HotspotPage {
+  hotspots: Hotspot[];
+  /**
+   * The newest `upload_at` in the page, verbatim, or undefined when it is
+   * empty. Passed back as `uploadedSince` it asks for what arrived after.
+   */
+  cursor: string | undefined;
+}
+
+export function toHotspotPage(payload: unknown): HotspotPage {
   const collection = hotspotCollectionSchema.parse(payload);
-  return collection.features.map((feature) => {
+  let cursor: string | undefined;
+  const hotspots = collection.features.map((feature) => {
     const [longitude, latitude] = feature.geometry.coordinates;
     const frp = Number(feature.properties.frp);
+    const uploadedAt = feature.properties.upload_at;
+    // Same "YYYY-MM-DD HH:MM:SS.ffffff" shape throughout, so strings compare.
+    if (uploadedAt && (!cursor || uploadedAt > cursor)) cursor = uploadedAt;
     return {
       id: String(feature.properties.id),
       latitude,
@@ -84,10 +98,17 @@ function toHotspots(payload: unknown): Hotspot[] {
       frp: Number.isFinite(frp) ? frp : 0,
     };
   });
+  return { hotspots, cursor };
 }
 
 /**
- * Greek detections from `since` (a UTC day) onwards.
+ * Greek detections, by when the satellite saw them or by when EFFIS published
+ * them.
+ *
+ * `acquiredSince` (a UTC day) is how the season is read. `uploadedSince` is
+ * how a page already holding the season stays current: it returns only what
+ * EFFIS has published since the cursor, however long ago the pass itself was,
+ * so a quiet poll costs a kilobyte and a late upload is never missed.
  *
  * Both filters run on the server. `gid_0` is EFFIS's own country assignment,
  * which beats clipping a bbox to a hand-drawn coastline: it keeps the
@@ -97,7 +118,13 @@ function toHotspots(payload: unknown): Hotspot[] {
  * dropped silently, which is fine because EFFIS only objects to requests with
  * *no* User-Agent at all.
  */
-export async function fetchGreekHotspots(since: string): Promise<Hotspot[]> {
+export async function fetchGreekHotspotPage(
+  from: { acquiredSince: string } | { uploadedSince: string },
+): Promise<HotspotPage> {
+  const [property, literal] =
+    "acquiredSince" in from
+      ? ["acq_at", from.acquiredSince]
+      : ["upload_at", from.uploadedSince];
   const params = new URLSearchParams({
     service: "WFS",
     version: "2.0.0",
@@ -109,12 +136,19 @@ export async function fetchGreekHotspots(since: string): Promise<Hotspot[]> {
       "<Filter><And>" +
       "<PropertyIsEqualTo><PropertyName>gid_0</PropertyName>" +
       "<Literal>GRC</Literal></PropertyIsEqualTo>" +
-      "<PropertyIsGreaterThanOrEqualTo><PropertyName>acq_at</PropertyName>" +
-      `<Literal>${since}</Literal>` +
+      // Inclusive, so a batch sharing the cursor's timestamp is not cut in
+      // two; the overlap it returns is dropped by id.
+      `<PropertyIsGreaterThanOrEqualTo><PropertyName>${property}</PropertyName>` +
+      `<Literal>${literal}</Literal>` +
       "</PropertyIsGreaterThanOrEqualTo>" +
       "</And></Filter>",
   });
-  return toHotspots(await fetchEffisJson(GWIS_BASE, params));
+  return toHotspotPage(await fetchEffisJson(GWIS_BASE, params));
+}
+
+/** Greek detections acquired from `since` (a UTC day) onwards. */
+export async function fetchGreekHotspots(since: string): Promise<Hotspot[]> {
+  return (await fetchGreekHotspotPage({ acquiredSince: since })).hotspots;
 }
 
 const LAND_COVER_FIELDS: [string, string][] = [

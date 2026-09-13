@@ -1,12 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchGreekHotspots } from "@/lib/effis/client";
+import { fetchGreekHotspotPage } from "@/lib/effis/client";
 import { mergeHotspots, topUpSince } from "@/lib/timeline";
 import type { Hotspot, HotspotsPayload } from "@/lib/types";
 import { dropPersistent, keepConfirmed } from "@/lib/wildfire-filter";
 
-const REFRESH_MS = 5 * 60 * 1000;
+/**
+ * EFFIS publishes Greece in two bursts a day, a couple of hours after each
+ * satellite pass (02:00-05:00 and 12:00-15:00 UTC), and a detection is two
+ * to four hours old by the time it is published. Checking more often than
+ * this would only find nothing faster.
+ */
+const REFRESH_MS = 15 * 60 * 1000;
 
 interface HotspotsState {
   hotspots: Hotspot[];
@@ -15,15 +21,17 @@ interface HotspotsState {
 }
 
 /**
- * Loads the season baked at build time, then tops it up straight from EFFIS
- * so the live end stays current between deploys. Fetching the season live
- * would be megabytes (EFFIS serves WFS uncompressed), so the top-up asks
- * only for the days the snapshot does not already cover.
+ * Loads the season baked at build time, then keeps its live end current
+ * straight from EFFIS between deploys.
  *
- * The new detections are held to the same standard as the baked ones: dropped
- * if they sit on a masked industrial site, and shown only once a second
- * detection confirms them. A real fire is confirmed within an overpass or two;
- * see lib/wildfire-filter.ts.
+ * The first top-up reads the days the snapshot does not cover. After that,
+ * each check asks only for what EFFIS has published since the last one, so a
+ * quiet check costs about a kilobyte. Checks run only while the page is on
+ * screen; a tab left in the background asks nothing until it is looked at.
+ *
+ * New detections are held to the same standard as the baked ones: dropped if
+ * they sit on a masked industrial site, and shown only once a second
+ * detection confirms them. See lib/wildfire-filter.ts.
  */
 export function useSeasonHotspots(): HotspotsState {
   const [state, setState] = useState<HotspotsState>({
@@ -35,10 +43,25 @@ export function useSeasonHotspots(): HotspotsState {
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let inFlight = false;
+    let lastCheck = 0;
     let baked: Hotspot[] | null = null;
     let masked: string[] = [];
+    // Everything the top-ups have brought in, by id, so overlaps never double.
+    const live = new Map<string, Hotspot>();
+    let cursor: string | undefined;
 
-    const load = async () => {
+    const schedule = () => {
+      if (cancelled || inFlight || document.visibilityState !== "visible") {
+        return;
+      }
+      clearTimeout(timer);
+      timer = setTimeout(check, Math.max(0, lastCheck + REFRESH_MS - Date.now()));
+    };
+
+    const check = async () => {
+      inFlight = true;
+      lastCheck = Date.now();
       try {
         if (!baked) {
           const response = await fetch("data/season.json");
@@ -54,14 +77,22 @@ export function useSeasonHotspots(): HotspotsState {
         }
 
         const newest = baked.map((hotspot) => hotspot.detectedAt).sort().at(-1);
-        const recent = await fetchGreekHotspots(
-          topUpSince(newest, new Date()),
-        ).catch(() => [] as Hotspot[]);
+        const page = await fetchGreekHotspotPage(
+          cursor
+            ? { uploadedSince: cursor }
+            : { acquiredSince: topUpSince(newest, new Date()) },
+        ).catch(() => null);
         if (cancelled) return;
+
+        // A failed check keeps the cursor, so the next one asks again.
+        if (page) {
+          cursor = page.cursor ?? cursor;
+          for (const hotspot of dropPersistent(page.hotspots, masked)) {
+            live.set(hotspot.id, hotspot);
+          }
+        }
         setState({
-          hotspots: keepConfirmed(
-            mergeHotspots(baked, dropPersistent(recent, masked)),
-          ),
+          hotspots: keepConfirmed(mergeHotspots(baked, [...live.values()])),
           loading: false,
           error: null,
         });
@@ -73,14 +104,25 @@ export function useSeasonHotspots(): HotspotsState {
             error: "Could not load fire detections.",
           }));
         }
+      } finally {
+        inFlight = false;
       }
-      if (!cancelled) timer = setTimeout(load, REFRESH_MS);
+      schedule();
     };
 
-    void load();
+    // Back on screen after a while: check now if one is due, else resume.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") schedule();
+      else clearTimeout(timer);
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    // The season itself loads even in a background tab; only checks wait.
+    void check();
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 
