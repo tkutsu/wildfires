@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.open-next/
+.wrangler/
+out/
+public/data/
+build/
+next-env.d.ts
+cloudflare-env.d.ts
+tsconfig.tsbuildinfo
+.env*
+!.env.example

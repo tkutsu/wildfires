@@ -1,0 +1,330 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* The theme is a data attribute set before hydration, not the OS setting. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-signal: var(--signal);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+}
+
+:root {
+  color-scheme: light;
+  --paper: #f4f0e8;
+  --paper-rgb: 244 240 232;
+  --ink: #211d17;
+  --ink-rgb: 33 29 23;
+  --signal: #d43d17;
+  /* Chart bar fill, validated against this theme's surface (dataviz checks). */
+  --chart-bar: #d43d17;
+  --surface-rgb: 255 255 255;
+  --font-display: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #16120e;
+  --paper-rgb: 22 18 14;
+  --ink: #ebe6dd;
+  --ink-rgb: 235 230 221;
+  --signal: #ff6b3d;
+  --chart-bar: #ef5a2b;
+  --surface-rgb: 46 40 33;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background-color: var(--paper);
+  font-family: var(--font-display);
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}
+
+button:not(:disabled),
+select:not(:disabled),
+summary {
+  cursor: pointer;
+}
+
+/* Mute base map colors so fire data stays the loudest thing on screen. */
+.fire-map-tiles {
+  filter: saturate(0.55) contrast(0.92);
+}
+
+[data-theme="dark"] .fire-map-tiles {
+  filter: invert(1) hue-rotate(180deg) saturate(0.4) brightness(0.9)
+    contrast(0.9);
+}
+
+.fire-flame {
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.35));
+  /* Leaflet positions markers with an inline `transform`, so this element
+     cannot be scaled from a stylesheet; hover is cued with light instead. */
+  transition:
+    filter 150ms ease-out,
+    opacity 150ms ease-out;
+}
+
+.fire-flame:hover {
+  filter: drop-shadow(0 3px 6px rgb(0 0 0 / 0.45)) brightness(1.12);
+}
+
+/* Playback only: days cross-fade instead of cutting. Opacity is safe to
+   animate here, unlike transform. */
+@keyframes flame-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fire-flame--entering {
+  animation: flame-enter 260ms ease-out both;
+}
+
+.fire-flame--leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Only the worst fires flicker, so the movement stays meaningful. */
+.fire-flame--large svg,
+.fire-flame--major svg {
+  animation: flame-flicker 2.4s ease-in-out infinite;
+  transform-origin: 50% 94%;
+}
+
+.fire-flame--major svg {
+  animation-duration: 1.8s;
+}
+
+@keyframes flame-flicker {
+  0%,
+  100% {
+    transform: scaleY(1) scaleX(1);
+    opacity: 1;
+  }
+  35% {
+    transform: scaleY(1.06) scaleX(0.97);
+    opacity: 0.94;
+  }
+  70% {
+    transform: scaleY(0.97) scaleX(1.03);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fire-flame svg {
+    animation: none;
+  }
+}
+
+.fire-tooltip.leaflet-tooltip {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid rgb(var(--surface-rgb) / 0.4);
+  border-radius: 0.5rem;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.fire-tooltip.leaflet-tooltip-top::before {
+  border-top-color: var(--paper);
+}
+
+/* Leaflet's own chrome, restyled to match the app shell. */
+.leaflet-container {
+  background: var(--paper);
+  font-family: inherit;
+}
+
+.leaflet-bar a,
+.leaflet-control-attribution {
+  color: var(--ink);
+  background: rgb(var(--surface-rgb) / 0.92);
+}
+
+.leaflet-bar a {
+  border-bottom-color: rgb(var(--ink-rgb) / 0.15);
+}
+
+.leaflet-bar a:hover {
+  background: rgb(var(--surface-rgb) / 1);
+}
+
+.fire-range {
+  height: 100%;
+  appearance: none;
+  background: transparent;
+}
+
+/* The track is the day chart behind it, so the input draws none of its own. */
+.fire-range::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+
+/* The handle is a playhead: a line marking the day, not a knob to grab.
+   The height is explicit because a percentage does not resolve on a thumb. */
+.fire-range::-webkit-slider-thumb {
+  width: 2px;
+  height: 2rem;
+  appearance: none;
+  background: var(--signal);
+  box-shadow: 0 0 0 1px rgb(var(--paper-rgb) / 0.6);
+}
+
+.fire-range::-moz-range-track {
+  height: 100%;
+  background: transparent;
+}
+
+.fire-range::-moz-range-thumb {
+  width: 2px;
+  height: 2rem;
+  border: 0;
+  border-radius: 0;
+  background: var(--signal);
+}
+
+/* Burn scars. Colours live here (not in Leaflet's path options) so they
+   follow the theme; SVG presentation attributes lose to these rules. */
+.burn-scar {
+  fill: #3d1f11;
+  fill-opacity: 0.55;
+  stroke: #a33c17;
+  stroke-opacity: 0.9;
+  transition:
+    fill-opacity 120ms ease-out,
+    stroke-opacity 120ms ease-out;
+  cursor: pointer;
+}
+
+.burn-scar:hover {
+  fill-opacity: 0.78;
+  stroke-opacity: 1;
+}
+
+[data-theme="dark"] .burn-scar {
+  fill: #0c0705;
+  fill-opacity: 0.62;
+  stroke: #ff7a45;
+}
+
+.scar-popup-shell .leaflet-popup-content-wrapper {
+  border: 1px solid rgb(var(--ink-rgb) / 0.12);
+  border-radius: 0.75rem;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.22);
+}
+
+.scar-popup-shell .leaflet-popup-content {
+  margin: 0.7rem 0.85rem;
+}
+
+.scar-popup-shell .leaflet-popup-tip {
+  background: var(--paper);
+}
+
+.scar-popup p {
+  margin: 0;
+}
+
+.scar-popup__area {
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.scar-popup__place {
+  margin-top: 0.1rem !important;
+  font-size: 0.8rem;
+}
+
+.scar-popup__date {
+  margin-top: 0.15rem !important;
+  font-size: 0.72rem;
+  opacity: 0.65;
+}
+
+.scar-popup__cover {
+  margin: 0.5rem 0 0;
+  padding: 0.45rem 0 0;
+  border-top: 1px solid rgb(var(--ink-rgb) / 0.12);
+  list-style: none;
+}
+
+.scar-popup__cover li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.25rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.scar-popup__cover li span:last-child {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+}
+
+.scar-popup__natura {
+  margin-top: 0.45rem !important;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #0f7a3d;
+}
+
+[data-theme="dark"] .scar-popup__natura {
+  color: #5cd68a;
+}
+
+/* A fire that has not started yet on the selected day. */
+.burn-scar--unburnt {
+  display: none;
+}
+
+/* Playback only: a scar wipes in from its western edge on the day its fire
+   starts, rather than appearing whole. */
+@keyframes scar-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.burn-scar--igniting {
+  animation: scar-wipe 420ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fire-flame--entering,
+  .burn-scar--igniting {
+    animation: none;
+  }
+}
