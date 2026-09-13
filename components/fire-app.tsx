@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { FireDangerPanel } from "@/components/fire-danger-panel";
 import { FireMap } from "@/components/fire-map";
 import { TimelineControls } from "@/components/timeline-controls";
@@ -44,23 +44,6 @@ function MoonIcon({ className }: { className?: string }) {
   );
 }
 
-function LayersIcon({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" className={className} viewBox="0 0 16 16">
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.4"
-      >
-        <path d="M8 1.6 14.4 5 8 8.4 1.6 5 8 1.6Z" />
-        <path d="m2.6 8 5.4 2.9L13.4 8" />
-        <path d="m2.6 11.1 5.4 2.9 5.4-2.9" />
-      </g>
-    </svg>
-  );
-}
-
 function PinIcon({ className }: { className?: string }) {
   return (
     <svg aria-hidden="true" className={className} viewBox="0 0 16 16">
@@ -100,8 +83,6 @@ export function FireApp() {
   const [playing, setPlaying] = useState(false);
   const [pin, setPin] = useState<DangerPoint | null>(null);
   const [locating, setLocating] = useState(false);
-  const [imagery, setImagery] = useState(false);
-  const [imageryMissing, setImageryMissing] = useState(false);
 
   const today = useMemo(() => toUtcDay(new Date()), []);
   const { hotspots, loading, error } = useSeasonHotspots();
@@ -129,12 +110,6 @@ export function FireApp() {
         0,
       ),
     [scars.payload, activeDay.date],
-  );
-
-  // NASA has no pass for the day yet, or none over Greece.
-  const onImageryLoaded = useCallback(
-    (available: boolean) => setImageryMissing(!available),
-    [],
   );
 
   const comparison = useMemo(
@@ -168,8 +143,6 @@ export function FireApp() {
         <FireMap
           animated={playing}
           hotspots={activeDay.hotspots}
-          imagery={imagery}
-          onImageryLoaded={onImageryLoaded}
           onPickPoint={setPin}
           pin={pin}
           scarDay={activeDay.date}
@@ -212,22 +185,6 @@ export function FireApp() {
         <div className="absolute top-3 right-3 z-[500] flex flex-col items-end gap-2">
           <div className="flex gap-2">
             <button
-              aria-label="Satellite imagery for this day"
-              aria-pressed={imagery}
-              className={`flex size-9 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
-                imagery
-                  ? "border-signal bg-signal text-white"
-                  : "border-ink/15 bg-paper/90 hover:bg-paper"
-              }`}
-              onClick={() => {
-                setImageryMissing(false);
-                setImagery((on) => !on);
-              }}
-              type="button"
-            >
-              <LayersIcon className="size-4" />
-            </button>
-            <button
               aria-label="Fire danger at my location"
               className="flex size-9 items-center justify-center rounded-full border border-ink/15 bg-paper/90 shadow-lg backdrop-blur transition hover:bg-paper"
               onClick={locate}
@@ -246,11 +203,6 @@ export function FireApp() {
             </button>
           </div>
 
-          {imagery && imageryMissing && (
-            <p className="rounded-full bg-paper/90 px-3 py-1 text-right text-xs opacity-80 shadow-lg backdrop-blur">
-              No satellite pass for {formatDay(activeDay.date)} yet
-            </p>
-          )}
           {!pin && (
             <p className="rounded-full bg-paper/90 px-3 py-1 text-xs opacity-80 shadow-lg backdrop-blur">
               Tap the map for fire danger

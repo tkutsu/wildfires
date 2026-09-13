@@ -16,11 +16,6 @@ was burning. Most of it is flat. August is not.
 Tap anywhere for the fire danger there today and tomorrow — the EFFIS Fire Weather Index,
 forecast by ECMWF — or use the crosshair to ask about where you are.
 
-The layers button swaps the base map for what the satellite saw that day: NASA publishes a
-daily global mosaic, and in shortwave infrared a fire front burns orange and a fresh scar
-goes brown, through smoke that hides both in true colour. It is the thing itself rather
-than this map's reading of it.
-
 Alongside the running total is how the year is going against the nine seasons EFFIS has
 mapped, compared day for day — so 1 August 2026 reads as 1.8× the average for the date,
 and by mid-September the same year has fallen back to two thirds of it.

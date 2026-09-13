@@ -7,7 +7,6 @@ import type {
   LayerGroup,
   Map as LeafletMap,
   Marker,
-  TileLayer,
 } from "leaflet";
 import { flameHtml, flameIconOptions, severityHeadline } from "@/components/flame-marker";
 import type { DangerPoint } from "@/hooks/use-fire-danger";
@@ -21,25 +20,6 @@ export const GREECE_MAP_BOUNDS: [[number, number], [number, number]] = [
 ];
 // Scars sit above the base tiles but below the flames.
 const SCAR_PANE = "burn-scars";
-// Satellite imagery goes over the base map, under everything drawn on it.
-const IMAGERY_PANE = "satellite";
-
-/**
- * NASA's daily global mosaic, free and keyless, addressed by the day it was
- * taken, which is exactly what the timeline is scrubbing. The M11-I2-I1 band
- * combination is the one to look at: shortwave infrared puts an active fire
- * front in orange and a fresh burn scar in brown, through the smoke that
- * hides both in true colour.
- *
- * WMTS numbers its tiles row before column, the other way round from Leaflet.
- */
-const IMAGERY_URL =
-  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/" +
-  "VIIRS_NOAA20_CorrectedReflectance_BandsM11-I2-I1/default/{day}/" +
-  "GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg";
-// The mosaic is 250 m; past this Leaflet upscales rather than asking for more.
-const IMAGERY_MAX_NATIVE_ZOOM = 8;
-
 const PIN_HTML = `
   <svg viewBox="0 0 24 32" width="24" height="32" aria-hidden="true">
     <path d="M12 1.5c-5 0-9 3.9-9 8.8 0 6.5 9 20.2 9 20.2s9-13.7 9-20.2c0-4.9-4-8.8-9-8.8Z"
@@ -69,10 +49,6 @@ interface FireMapProps {
   pin: DangerPoint | null;
   /** Called when the map is clicked somewhere that is not a burn scar. */
   onPickPoint: (point: DangerPoint) => void;
-  /** Show NASA's satellite mosaic for the day on show. */
-  imagery: boolean;
-  /** Reports whether the mosaic has a pass for that day yet. */
-  onImageryLoaded: (available: boolean) => void;
 }
 
 function formatArea(hectares: number): string {
@@ -144,8 +120,6 @@ export function FireMap({
   animated,
   pin,
   onPickPoint,
-  imagery,
-  onImageryLoaded,
 }: FireMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -159,11 +133,9 @@ export function FireMap({
   const animatedRef = useRef(animated);
   const scarLayerRef = useRef<GeoJSONLayer | null>(null);
   const pinRef = useRef<Marker | null>(null);
-  const imageryRef = useRef<TileLayer | null>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   // The map is built once, so the click handler reads the callback from here.
   const onPickPointRef = useRef(onPickPoint);
-  const onImageryLoadedRef = useRef(onImageryLoaded);
   const [mapReady, setMapReady] = useState(false);
 
   const clusters = useMemo(() => clusterHotspots(hotspots), [hotspots]);
@@ -175,10 +147,6 @@ export function FireMap({
   useEffect(() => {
     onPickPointRef.current = onPickPoint;
   }, [onPickPoint]);
-
-  useEffect(() => {
-    onImageryLoadedRef.current = onImageryLoaded;
-  }, [onImageryLoaded]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -209,7 +177,6 @@ export function FireMap({
         maxZoom: 19,
       }).addTo(map);
 
-      map.createPane(IMAGERY_PANE).style.zIndex = "250";
       map.createPane(SCAR_PANE).style.zIndex = "400";
 
       // Leaflet does not fire this for clicks that land on a scar or a flame,
@@ -254,7 +221,6 @@ export function FireMap({
       }
       scarLayerRef.current = null;
       pinRef.current = null;
-      imageryRef.current = null;
       setMapReady(false);
     };
     // The map instance is deliberately created only once.
@@ -378,39 +344,6 @@ export function FireMap({
       );
     });
   }, [scars, scarDay, mapReady]);
-
-  useEffect(() => {
-    const L = leafletRef.current;
-    const map = mapRef.current;
-    if (!L || !map || !mapReady) return;
-
-    imageryRef.current?.remove();
-    imageryRef.current = null;
-    if (!imagery) return;
-
-    // NASA publishes a day's mosaic a few hours after the satellite passes,
-    // so today's is usually missing until the afternoon. Count what arrives
-    // and say so, rather than leaving the map mysteriously bare.
-    let loaded = 0;
-    const layer = L.tileLayer(IMAGERY_URL.replace("{day}", scarDay), {
-      attribution:
-        'Imagery <a href="https://worldview.earthdata.nasa.gov">NASA EOSDIS GIBS</a>',
-      bounds: GREECE_MAP_BOUNDS,
-      className: "fire-map-imagery",
-      maxNativeZoom: IMAGERY_MAX_NATIVE_ZOOM,
-      pane: IMAGERY_PANE,
-    })
-      .on("tileload", () => {
-        loaded += 1;
-      })
-      .on("load", () => onImageryLoadedRef.current(loaded > 0))
-      .addTo(map);
-    imageryRef.current = layer;
-
-    return () => {
-      layer.remove();
-    };
-  }, [imagery, scarDay, mapReady]);
 
   useEffect(() => {
     const L = leafletRef.current;
