@@ -1,4 +1,4 @@
-# Greek Fires
+# <img src="docs/icon.svg" alt="" width="40" align="center"> Greek Fires
 
 A map of where Greece burned this year, built from Copernicus EFFIS satellite data.
 
